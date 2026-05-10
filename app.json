@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Tareas y Recordatorios",
+    "slug": "tareas-recordatorios",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#F6F7FB"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    }
+  }
+}
