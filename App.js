@@ -5,7 +5,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -15,6 +14,8 @@ import {
   View
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
@@ -24,12 +25,15 @@ const SESSION_KEY = "@todo_app_session";
 const TASKS_KEY_PREFIX = "@todo_app_tasks";
 
 const REPEAT_OPTIONS = [
-  { label: "Una vez", minutes: 0 },
-  { label: "Cada 5 min", minutes: 5 },
-  { label: "Cada 15 min", minutes: 15 },
-  { label: "Cada 30 min", minutes: 30 },
-  { label: "Cada hora", minutes: 60 },
-  { label: "Diario", minutes: 1440 }
+  { label: "Una vez", seconds: 0 },
+  { label: "Cada 10 seg", seconds: 10 },
+  { label: "Cada 30 seg", seconds: 30 },
+  { label: "Cada 60 seg", seconds: 60 },
+  { label: "Cada 5 min", seconds: 300 },
+  { label: "Cada 15 min", seconds: 900 },
+  { label: "Cada 30 min", seconds: 1800 },
+  { label: "Cada hora", seconds: 3600 },
+  { label: "Diario", seconds: 86400 }
 ];
 
 function AuthCard({ title, children, footerText, footerAction, footerActionText }) {
@@ -170,7 +174,7 @@ function HomeScreen({ navigation, route, onLogout }) {
 
   useEffect(() => {
     checkDueReminders();
-    const timer = setInterval(checkDueReminders, 15000);
+    const timer = setInterval(checkDueReminders, 1000);
     return () => clearInterval(timer);
   }, [tasks, username]);
 
@@ -202,13 +206,14 @@ function HomeScreen({ navigation, route, onLogout }) {
       dueTasks.push(task);
       changed = true;
 
-      if (!task.repeatMinutes) {
+      const repeatSeconds = getTaskRepeatSeconds(task);
+      if (!repeatSeconds) {
         return { ...task, nextReminderAt: null };
       }
 
       return {
         ...task,
-        nextReminderAt: getNextRepeatedReminder(task.nextReminderAt, task.repeatMinutes)
+        nextReminderAt: getNextRepeatedReminder(task.nextReminderAt, repeatSeconds)
       };
     });
 
@@ -223,9 +228,13 @@ function HomeScreen({ navigation, route, onLogout }) {
   };
 
   const toggleTask = async (id) => {
-    const nextTasks = tasks.map((task) =>
-      task.id === id ? { ...task, done: !task.done } : task
-    );
+    const nextTasks = tasks.map((task) => {
+      if (task.id !== id) {
+        return task;
+      }
+
+      return { ...task, done: !task.done };
+    });
     await saveTasks(nextTasks);
   };
 
@@ -292,7 +301,7 @@ function TaskItem({ task, onToggle, onDelete }) {
         </Text>
         <Text style={styles.reminderText}>Recordatorio: {task.reminder}</Text>
         <Text style={styles.reminderMeta}>
-          {task.reminderTime || "Sin horario"} - {getRepeatLabel(task.repeatMinutes)}
+          {formatReminderDateLabel(task.reminderDate)} {task.reminderTime || "Sin horario"} - {getRepeatLabel(getTaskRepeatSeconds(task))}
         </Text>
         <Text style={styles.reminderMeta}>
           Proximo aviso: {formatNextReminder(task.nextReminderAt)}
@@ -308,23 +317,35 @@ function TaskItem({ task, onToggle, onDelete }) {
 function CreateTaskScreen({ navigation, route }) {
   const [title, setTitle] = useState("");
   const [reminder, setReminder] = useState("");
-  const [reminderTime, setReminderTime] = useState("");
-  const [repeatMinutes, setRepeatMinutes] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedTime, setSelectedTime] = useState(getDefaultReminderTime());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [repeatSeconds, setRepeatSeconds] = useState(0);
+  const [customRepeatSeconds, setCustomRepeatSeconds] = useState("");
   const username = route.params?.username;
+
+  const updateCustomRepeat = (value) => {
+    const onlyNumbers = value.replace(/[^0-9]/g, "");
+    setCustomRepeatSeconds(onlyNumbers);
+
+    if (onlyNumbers) {
+      setRepeatSeconds(Number(onlyNumbers));
+    }
+  };
 
   const createTask = async () => {
     const cleanTitle = title.trim();
     const cleanReminder = reminder.trim();
-    const cleanTime = reminderTime.trim();
 
-    if (!cleanTitle || !cleanReminder || !cleanTime) {
-      Alert.alert("Faltan datos", "La tarea necesita titulo, recordatorio y horario.");
+    if (!cleanTitle || !cleanReminder) {
+      Alert.alert("Faltan datos", "La tarea necesita titulo, recordatorio, fecha y horario.");
       return;
     }
 
-    const nextReminderAt = parseReminderTime(cleanTime);
-    if (!nextReminderAt) {
-      Alert.alert("Horario invalido", "Usa el formato HH:mm, por ejemplo 08:30 o 21:00.");
+    const nextReminderAt = buildReminderDateTime(selectedDate, selectedTime);
+    if (nextReminderAt <= Date.now()) {
+      Alert.alert("Fecha u horario invalido", "Elegir una fecha y hora futura.");
       return;
     }
 
@@ -334,8 +355,9 @@ function CreateTaskScreen({ navigation, route }) {
       id: Date.now().toString(),
       title: cleanTitle,
       reminder: cleanReminder,
-      reminderTime: cleanTime,
-      repeatMinutes,
+      reminderDate: formatDateValue(selectedDate),
+      reminderTime: formatTimeValue(selectedTime),
+      repeatSeconds,
       nextReminderAt,
       done: false,
       createdAt: new Date().toISOString()
@@ -372,25 +394,62 @@ function CreateTaskScreen({ navigation, route }) {
             multiline
           />
 
+          <Text style={styles.label}>Fecha</Text>
+          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowDatePicker(true)}>
+            <Text style={styles.pickerButtonText}>{formatDateDisplay(selectedDate)}</Text>
+          </TouchableOpacity>
+          {showDatePicker && (
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              minimumDate={new Date()}
+              onChange={(event, date) => {
+                if (Platform.OS !== "ios") {
+                  setShowDatePicker(false);
+                }
+
+                if (date) {
+                  setSelectedDate(date);
+                }
+              }}
+            />
+          )}
+
           <Text style={styles.label}>Horario</Text>
-          <TextInput
-            value={reminderTime}
-            onChangeText={setReminderTime}
-            placeholder="HH:mm, ej: 20:30"
-            keyboardType="numbers-and-punctuation"
-            maxLength={5}
-            style={styles.input}
-          />
+          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowTimePicker(true)}>
+            <Text style={styles.pickerButtonText}>{formatTimeValue(selectedTime)}</Text>
+          </TouchableOpacity>
+          {showTimePicker && (
+            <DateTimePicker
+              value={selectedTime}
+              mode="time"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              is24Hour
+              onChange={(event, date) => {
+                if (Platform.OS !== "ios") {
+                  setShowTimePicker(false);
+                }
+
+                if (date) {
+                  setSelectedTime(date);
+                }
+              }}
+            />
+          )}
 
           <Text style={styles.label}>Repeticion</Text>
           <View style={styles.optionGrid}>
             {REPEAT_OPTIONS.map((option) => {
-              const selected = repeatMinutes === option.minutes;
+              const selected = repeatSeconds === option.seconds;
               return (
                 <TouchableOpacity
                   key={option.label}
                   style={[styles.optionButton, selected && styles.optionButtonSelected]}
-                  onPress={() => setRepeatMinutes(option.minutes)}
+                  onPress={() => {
+                    setCustomRepeatSeconds("");
+                    setRepeatSeconds(option.seconds);
+                  }}
                 >
                   <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
                     {option.label}
@@ -399,6 +458,16 @@ function CreateTaskScreen({ navigation, route }) {
               );
             })}
           </View>
+
+          <Text style={styles.label}>Otra repeticion en segundos</Text>
+          <TextInput
+            value={customRepeatSeconds}
+            onChangeText={updateCustomRepeat}
+            placeholder="Ej: 45"
+            keyboardType="number-pad"
+            style={styles.input}
+          />
+          <Text style={styles.selectedRepeat}>Seleccionado: {getRepeatLabel(repeatSeconds)}</Text>
 
           <Button title="Guardar tarea" onPress={createTask} />
         </View>
@@ -416,24 +485,21 @@ function getTasksKey(username) {
   return `${TASKS_KEY_PREFIX}_${username}`;
 }
 
-function parseReminderTime(value) {
-  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
-  if (!match) {
-    return null;
-  }
-
-  const nextDate = new Date();
-  nextDate.setHours(Number(match[1]), Number(match[2]), 0, 0);
-
-  if (nextDate.getTime() <= Date.now()) {
-    nextDate.setDate(nextDate.getDate() + 1);
-  }
-
-  return nextDate.getTime();
+function getDefaultReminderTime() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() + 5);
+  date.setSeconds(0, 0);
+  return date;
 }
 
-function getNextRepeatedReminder(previousReminderAt, repeatMinutes) {
-  const intervalMs = repeatMinutes * 60 * 1000;
+function buildReminderDateTime(datePart, timePart) {
+  const reminderDate = new Date(datePart);
+  reminderDate.setHours(timePart.getHours(), timePart.getMinutes(), 0, 0);
+  return reminderDate.getTime();
+}
+
+function getNextRepeatedReminder(previousReminderAt, repeatSeconds) {
+  const intervalMs = repeatSeconds * 1000;
   let nextReminderAt = previousReminderAt + intervalMs;
 
   while (nextReminderAt <= Date.now()) {
@@ -441,6 +507,30 @@ function getNextRepeatedReminder(previousReminderAt, repeatMinutes) {
   }
 
   return nextReminderAt;
+}
+
+function formatDateValue(date) {
+  return `${padTime(date.getDate())}/${padTime(date.getMonth() + 1)}/${date.getFullYear()}`;
+}
+
+function formatTimeValue(date) {
+  return `${padTime(date.getHours())}:${padTime(date.getMinutes())}`;
+}
+
+function formatDateDisplay(date) {
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+
+  if (date.toDateString() === today.toDateString()) {
+    return `Hoy - ${formatDateValue(date)}`;
+  }
+
+  if (date.toDateString() === tomorrow.toDateString()) {
+    return `Manana - ${formatDateValue(date)}`;
+  }
+
+  return formatDateValue(date);
 }
 
 function formatNextReminder(value) {
@@ -460,16 +550,52 @@ function formatNextReminder(value) {
         ? "manana"
         : date.toLocaleDateString();
 
-  return `${dayLabel} ${padTime(date.getHours())}:${padTime(date.getMinutes())}`;
+  return `${dayLabel} ${padTime(date.getHours())}:${padTime(date.getMinutes())}:${padTime(date.getSeconds())}`;
 }
 
-function getRepeatLabel(minutes) {
-  if (minutes === undefined || minutes === null) {
+function formatReminderDateLabel(value) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  if (value === "hoy") {
+    return "Hoy";
+  }
+
+  if (value === "manana") {
+    return "Manana";
+  }
+
+  return value;
+}
+
+function getTaskRepeatSeconds(task) {
+  if (task.repeatSeconds !== undefined && task.repeatSeconds !== null) {
+    return task.repeatSeconds;
+  }
+
+  if (task.repeatMinutes !== undefined && task.repeatMinutes !== null) {
+    return task.repeatMinutes * 60;
+  }
+
+  return null;
+}
+
+function getRepeatLabel(seconds) {
+  if (seconds === undefined || seconds === null) {
     return "Sin repeticion";
   }
 
-  const option = REPEAT_OPTIONS.find((item) => item.minutes === minutes);
-  return option ? option.label : `Cada ${minutes} min`;
+  const option = REPEAT_OPTIONS.find((item) => item.seconds === seconds);
+  if (option) {
+    return option.label;
+  }
+
+  if (seconds < 60) {
+    return `Cada ${seconds} seg`;
+  }
+
+  return `Cada ${Math.round(seconds / 60)} min`;
 }
 
 function padTime(value) {
@@ -492,42 +618,46 @@ export default function App() {
 
   if (checkingSession) {
     return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <Text style={styles.headerTitle}>Cargando...</Text>
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.loadingScreen}>
+          <Text style={styles.headerTitle}>Cargando...</Text>
+        </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar barStyle="dark-content" />
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {currentUser ? (
-          <>
-            <Stack.Screen name="Home">
-              {(props) => (
-                <HomeScreen
-                  {...props}
-                  route={{
-                    ...props.route,
-                    params: { username: currentUser }
-                  }}
-                  onLogout={() => setCurrentUser(null)}
-                />
-              )}
-            </Stack.Screen>
-            <Stack.Screen name="NuevaTarea" component={CreateTaskScreen} />
-          </>
-        ) : (
-          <>
-            <Stack.Screen name="Login">
-              {(props) => <LoginScreen {...props} onLogin={setCurrentUser} />}
-            </Stack.Screen>
-            <Stack.Screen name="Registro" component={RegisterScreen} />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <StatusBar barStyle="dark-content" />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {currentUser ? (
+            <>
+              <Stack.Screen name="Home">
+                {(props) => (
+                  <HomeScreen
+                    {...props}
+                    route={{
+                      ...props.route,
+                      params: { username: currentUser }
+                    }}
+                    onLogout={() => setCurrentUser(null)}
+                  />
+                )}
+              </Stack.Screen>
+              <Stack.Screen name="NuevaTarea" component={CreateTaskScreen} />
+            </>
+          ) : (
+            <>
+              <Stack.Screen name="Login">
+                {(props) => <LoginScreen {...props} onLogin={setCurrentUser} />}
+              </Stack.Screen>
+              <Stack.Screen name="Registro" component={RegisterScreen} />
+            </>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 
@@ -769,5 +899,26 @@ const styles = StyleSheet.create({
   },
   optionTextSelected: {
     color: "#FFFFFF"
+  },
+  pickerButton: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#D8DEEA",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14
+  },
+  pickerButtonText: {
+    color: "#182033",
+    fontSize: 16,
+    fontWeight: "700"
+  },
+  selectedRepeat: {
+    color: "#276EF1",
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 18,
+    marginTop: -6
   }
 });
