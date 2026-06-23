@@ -16,16 +16,13 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
-import * as Contacts from "expo-contacts";
-import * as Calendar from "expo-calendar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useTaskStore } from "./src/stores/taskStore";
 import TaskResourceSummary from "./src/components/TaskResourceSummary";
 import { REPEAT_OPTIONS, getRepeatLabel, getTaskRepeatSeconds, validateTaskForm } from "./src/utils/reminders";
+import { assertModuleAvailable, getCalendar, getContacts, getImagePicker, getLocation } from "./src/utils/optionalExpoModules";
 
 const Stack = createNativeStackNavigator();
 const USERS_KEY = "@todo_app_users";
@@ -328,6 +325,8 @@ function CreateTaskScreen({ navigation, route }) {
   };
 
   const takePhoto = async () => {
+    const ImagePicker = getImagePicker();
+    if (!assertModuleAvailable(ImagePicker, "la camara", Alert)) return;
     const granted = await requestPermission(
       ImagePicker.requestCameraPermissionsAsync,
       "No se puede abrir la camara sin permiso. Podes habilitarlo desde ajustes."
@@ -338,6 +337,8 @@ function CreateTaskScreen({ navigation, route }) {
   };
 
   const pickImage = async () => {
+    const ImagePicker = getImagePicker();
+    if (!assertModuleAvailable(ImagePicker, "la galeria", Alert)) return;
     const granted = await requestPermission(
       ImagePicker.requestMediaLibraryPermissionsAsync,
       "No se puede acceder a la galeria sin permiso. Podes habilitarlo desde ajustes."
@@ -348,6 +349,8 @@ function CreateTaskScreen({ navigation, route }) {
   };
 
   const attachLocation = async () => {
+    const Location = getLocation();
+    if (!assertModuleAvailable(Location, "la ubicacion", Alert)) return;
     const granted = await requestPermission(
       Location.requestForegroundPermissionsAsync,
       "No se puede obtener la ubicacion sin permiso de GPS."
@@ -358,6 +361,8 @@ function CreateTaskScreen({ navigation, route }) {
   };
 
   const attachContact = async () => {
+    const Contacts = getContacts();
+    if (!assertModuleAvailable(Contacts, "los contactos", Alert)) return;
     const granted = await requestPermission(
       Contacts.requestPermissionsAsync,
       "No se puede seleccionar un responsable sin permiso de contactos."
@@ -368,6 +373,8 @@ function CreateTaskScreen({ navigation, route }) {
   };
 
   const createCalendarEvent = async (task) => {
+    const Calendar = getCalendar();
+    if (!assertModuleAvailable(Calendar, "el calendario", Alert)) return null;
     const granted = await requestPermission(
       Calendar.requestCalendarPermissionsAsync,
       "No se puede crear el evento sin permiso de calendario."
