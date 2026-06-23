@@ -319,6 +319,13 @@ function CreateTaskScreen({ navigation, route }) {
   const [contact, setContact] = useState(null);
   const username = route.params?.username;
   const addTask = useTaskStore((state) => state.addTask);
+  const setTaskUsername = useTaskStore((state) => state.setUsername);
+
+  useEffect(() => {
+    if (username) {
+      setTaskUsername(username);
+    }
+  }, [username, setTaskUsername]);
 
   const requestPermission = async (requester, deniedMessage) => {
     const response = await requester();
@@ -353,8 +360,15 @@ function CreateTaskScreen({ navigation, route }) {
       "No se puede obtener la ubicacion sin permiso de GPS."
     );
     if (!granted) return;
-    const current = await Location.getCurrentPositionAsync({});
-    setLocation({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+    const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const nextLocation = {
+      latitude: current.coords.latitude,
+      longitude: current.coords.longitude,
+      accuracy: current.coords.accuracy,
+      capturedAt: new Date().toISOString()
+    };
+    setLocation(nextLocation);
+    Alert.alert("Ubicacion guardada", "La ubicacion actual se va a guardar con esta tarea.");
   };
 
   const attachContact = async () => {

@@ -8,6 +8,9 @@ export default function TaskResourceSummary({ task, styles }) {
       {task.location ? (
         <Text style={styles.reminderMeta}>Ubicacion: {task.location.latitude.toFixed(5)}, {task.location.longitude.toFixed(5)}</Text>
       ) : null}
+      {task.location?.capturedAt ? (
+        <Text style={styles.reminderMeta}>GPS guardado: {new Date(task.location.capturedAt).toLocaleString()}</Text>
+      ) : null}
       {task.contact ? <Text style={styles.reminderMeta}>Responsable: {task.contact.name}</Text> : null}
       {task.calendarEventId ? <Text style={styles.reminderMeta}>Evento calendario: creado</Text> : null}
     </View>
