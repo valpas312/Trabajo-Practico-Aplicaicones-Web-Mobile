@@ -15,8 +15,8 @@ export const getCalendar = () => loadOptionalModule("expo-calendar");
 export const assertModuleAvailable = (moduleValue, label, Alert) => {
   if (moduleValue) return true;
   Alert.alert(
-    "Modulo no disponible",
-    `Para usar ${label}, instala la dependencia Expo correspondiente y reinicia la app.`
+    "Dependencia no instalada",
+    `Para usar ${label}, ejecuta npm install y reinicia Expo. La app puede seguir funcionando sin este recurso.`
   );
   return false;
 };

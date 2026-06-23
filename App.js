@@ -16,10 +16,6 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
-import * as Contacts from "expo-contacts";
-import * as Calendar from "expo-calendar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
