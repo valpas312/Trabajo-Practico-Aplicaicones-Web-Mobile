@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { create } from "zustand";
 
 export const TASKS_KEY_PREFIX = "@todo_app_tasks";
 export const getTasksKey = (username) => `${TASKS_KEY_PREFIX}_${username}`;
@@ -39,29 +39,4 @@ export const createTaskStore = (set, get) => ({
   clearTasks: () => set({ username: null, tasks: [] })
 });
 
-const createLocalStore = (initializer) => {
-  let state;
-  const listeners = new Set();
-  const get = () => state;
-  const set = (update) => {
-    state = { ...state, ...(typeof update === "function" ? update(state) : update) };
-    listeners.forEach((listener) => listener());
-  };
-  const subscribe = (listener) => {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  };
-  state = initializer(set, get);
-  return { get, set, subscribe };
-};
-
-const taskStore = createLocalStore(createTaskStore);
-
-export const useTaskStore = (selector = (state) => state) =>
-  useSyncExternalStore(
-    taskStore.subscribe,
-    () => selector(taskStore.get()),
-    () => selector(taskStore.get())
-  );
-
-export const taskStoreApi = taskStore;
+export const useTaskStore = create(createTaskStore);

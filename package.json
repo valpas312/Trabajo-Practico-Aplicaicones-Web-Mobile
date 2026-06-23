@@ -24,7 +24,8 @@
     "expo-image-picker": "55.0.16",
     "expo-location": "55.1.8",
     "expo-contacts": "55.0.14",
-    "expo-calendar": "55.0.14"
+    "expo-calendar": "55.0.14",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
