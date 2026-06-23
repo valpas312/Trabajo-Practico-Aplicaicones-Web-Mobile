@@ -25,6 +25,10 @@
     "expo-location": "^55.0.0",
     "expo-contacts": "^55.0.0",
     "expo-calendar": "^55.0.0",
+    "expo-image-picker": "~18.0.6",
+    "expo-location": "~20.0.6",
+    "expo-contacts": "~16.0.6",
+    "expo-calendar": "~16.0.6",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
