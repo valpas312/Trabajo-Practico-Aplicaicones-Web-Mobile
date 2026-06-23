@@ -1,3 +1,5 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { create } from "zustand";
 import { useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -39,6 +41,7 @@ export const createTaskStore = (set, get) => ({
   clearTasks: () => set({ username: null, tasks: [] })
 });
 
+export const useTaskStore = create(createTaskStore);
 const createVanillaStore = (initializer) => {
   let state;
   const listeners = new Set();
