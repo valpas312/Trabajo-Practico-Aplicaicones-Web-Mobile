@@ -14,7 +14,16 @@
 - Editar y eliminar tareas según sea necesario.
 - Recibir notificaciones de recordatorio en la fecha y hora establecida.
 
+## Nuevas funcionalidades
+- Tomar fotos y adjuntarlas a la tarea
+- Seleccionar fotos guardadas
+- Guardar ubicacion a la tarea
+- Seleccionar contacto
+
 ## Enlace a video de Youtube 1
 - https://youtu.be/x4LWySpx7qM
 ## Enlace a video de Youtube 2 
 - https://youtu.be/Aa6s3XNgOZ0
+
+## Aclaracion
+- Se utilizó Codex y esto trajo problemas de merging, a esto se deben tantos commits en un mismo dia
