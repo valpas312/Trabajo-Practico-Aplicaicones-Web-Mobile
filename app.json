@@ -15,7 +15,33 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.valen.tareasrecordatorios"
-    }
+      "package": "com.valen.tareasrecordatorios",
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_CONTACTS",
+        "WRITE_CALENDAR",
+        "READ_CALENDAR"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La app necesita acceder a la galeria para adjuntar imagenes a tareas.",
+          "cameraPermission": "La app necesita acceder a la camara para tomar fotos de tareas."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "La app necesita acceder a tu ubicacion para asociarla a tareas."
+        }
+      ],
+      "expo-contacts",
+      "expo-calendar"
+    ]
   }
 }
