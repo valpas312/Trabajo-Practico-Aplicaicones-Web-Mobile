@@ -11,30 +11,22 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  Image
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useTaskStore } from "./src/stores/taskStore";
+import TaskResourceSummary from "./src/components/TaskResourceSummary";
+import { REPEAT_OPTIONS, getRepeatLabel, getTaskRepeatSeconds, validateTaskForm } from "./src/utils/reminders";
+import { assertModuleAvailable, getCalendar, getContacts, getImagePicker, getLocation } from "./src/utils/optionalExpoModules";
 
 const Stack = createNativeStackNavigator();
 const USERS_KEY = "@todo_app_users";
 const SESSION_KEY = "@todo_app_session";
-const TASKS_KEY_PREFIX = "@todo_app_tasks";
-
-const REPEAT_OPTIONS = [
-  { label: "Una vez", seconds: 0 },
-  { label: "Cada 10 seg", seconds: 10 },
-  { label: "Cada 30 seg", seconds: 30 },
-  { label: "Cada 60 seg", seconds: 60 },
-  { label: "Cada 5 min", seconds: 300 },
-  { label: "Cada 15 min", seconds: 900 },
-  { label: "Cada 30 min", seconds: 1800 },
-  { label: "Cada hora", seconds: 3600 },
-  { label: "Diario", seconds: 86400 }
-];
 
 function AuthCard({ title, children, footerText, footerAction, footerActionText }) {
   return (
@@ -164,13 +156,17 @@ function RegisterScreen({ navigation }) {
 }
 
 function HomeScreen({ navigation, route, onLogout }) {
-  const [tasks, setTasks] = useState([]);
   const username = route.params?.username;
+  const tasks = useTaskStore((state) => state.tasks);
+  const loadTasksFromStore = useTaskStore((state) => state.loadTasks);
+  const replaceTasks = useTaskStore((state) => state.replaceTasks);
+  const deleteTaskById = useTaskStore((state) => state.deleteTask);
+  const clearTasks = useTaskStore((state) => state.clearTasks);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", loadTasks);
+    const unsubscribe = navigation.addListener("focus", () => loadTasksFromStore(username));
     return unsubscribe;
-  }, [navigation, username]);
+  }, [navigation, username, loadTasksFromStore]);
 
   useEffect(() => {
     checkDueReminders();
@@ -182,16 +178,6 @@ function HomeScreen({ navigation, route, onLogout }) {
     () => tasks.filter((task) => !task.done).length,
     [tasks]
   );
-
-  const loadTasks = async () => {
-    const stored = await AsyncStorage.getItem(getTasksKey(username));
-    setTasks(stored ? JSON.parse(stored) : []);
-  };
-
-  const saveTasks = async (nextTasks) => {
-    setTasks(nextTasks);
-    await AsyncStorage.setItem(getTasksKey(username), JSON.stringify(nextTasks));
-  };
 
   const checkDueReminders = async () => {
     const now = Date.now();
@@ -221,7 +207,7 @@ function HomeScreen({ navigation, route, onLogout }) {
       return;
     }
 
-    await saveTasks(nextTasks);
+    await replaceTasks(nextTasks);
     dueTasks.forEach((task) => {
       Alert.alert("Recordatorio", `${task.title}\n${task.reminder}`);
     });
@@ -235,15 +221,16 @@ function HomeScreen({ navigation, route, onLogout }) {
 
       return { ...task, done: !task.done };
     });
-    await saveTasks(nextTasks);
+    await replaceTasks(nextTasks);
   };
 
   const deleteTask = async (task) => {
-    await saveTasks(tasks.filter((item) => item.id !== task.id));
+    await deleteTaskById(task.id);
   };
 
   const logout = async () => {
     await AsyncStorage.removeItem(SESSION_KEY);
+    clearTasks();
     onLogout();
   };
 
@@ -306,6 +293,7 @@ function TaskItem({ task, onToggle, onDelete }) {
         <Text style={styles.reminderMeta}>
           Proximo aviso: {formatNextReminder(task.nextReminderAt)}
         </Text>
+        <TaskResourceSummary task={task} styles={styles} />
       </View>
       <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(task)}>
         <Text style={styles.deleteText}>Eliminar</Text>
@@ -323,7 +311,89 @@ function CreateTaskScreen({ navigation, route }) {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [repeatSeconds, setRepeatSeconds] = useState(0);
   const [customRepeatSeconds, setCustomRepeatSeconds] = useState("");
+  const [imageUri, setImageUri] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [contact, setContact] = useState(null);
   const username = route.params?.username;
+  const addTask = useTaskStore((state) => state.addTask);
+
+  const requestPermission = async (requester, deniedMessage) => {
+    const response = await requester();
+    if (response.status === "granted") return true;
+    Alert.alert("Permiso requerido", deniedMessage);
+    return false;
+  };
+
+  const takePhoto = async () => {
+    const ImagePicker = getImagePicker();
+    if (!assertModuleAvailable(ImagePicker, "la camara", Alert)) return;
+    const granted = await requestPermission(
+      ImagePicker.requestCameraPermissionsAsync,
+      "No se puede abrir la camara sin permiso. Podes habilitarlo desde ajustes."
+    );
+    if (!granted) return;
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (!result.canceled) setImageUri(result.assets[0].uri);
+  };
+
+  const pickImage = async () => {
+    const ImagePicker = getImagePicker();
+    if (!assertModuleAvailable(ImagePicker, "la galeria", Alert)) return;
+    const granted = await requestPermission(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+      "No se puede acceder a la galeria sin permiso. Podes habilitarlo desde ajustes."
+    );
+    if (!granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    if (!result.canceled) setImageUri(result.assets[0].uri);
+  };
+
+  const attachLocation = async () => {
+    const Location = getLocation();
+    if (!assertModuleAvailable(Location, "la ubicacion", Alert)) return;
+    const granted = await requestPermission(
+      Location.requestForegroundPermissionsAsync,
+      "No se puede obtener la ubicacion sin permiso de GPS."
+    );
+    if (!granted) return;
+    const current = await Location.getCurrentPositionAsync({});
+    setLocation({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+  };
+
+  const attachContact = async () => {
+    const Contacts = getContacts();
+    if (!assertModuleAvailable(Contacts, "los contactos", Alert)) return;
+    const granted = await requestPermission(
+      Contacts.requestPermissionsAsync,
+      "No se puede seleccionar un responsable sin permiso de contactos."
+    );
+    if (!granted) return;
+    const result = await Contacts.presentContactPickerAsync();
+    if (result) setContact({ id: result.id, name: result.name, phone: result.phoneNumbers?.[0]?.number || "" });
+  };
+
+  const createCalendarEvent = async (task) => {
+    const Calendar = getCalendar();
+    if (!assertModuleAvailable(Calendar, "el calendario", Alert)) return null;
+    const granted = await requestPermission(
+      Calendar.requestCalendarPermissionsAsync,
+      "No se puede crear el evento sin permiso de calendario."
+    );
+    if (!granted) return null;
+    const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+    const calendar = calendars.find((item) => item.allowsModifications) || calendars[0];
+    if (!calendar) {
+      Alert.alert("Calendario no disponible", "No se encontro un calendario editable en el dispositivo.");
+      return null;
+    }
+    return Calendar.createEventAsync(calendar.id, {
+      title: task.title,
+      notes: task.reminder,
+      startDate: new Date(task.nextReminderAt),
+      endDate: new Date(task.nextReminderAt + 30 * 60 * 1000),
+      location: task.location ? `${task.location.latitude}, ${task.location.longitude}` : undefined
+    });
+  };
 
   const updateCustomRepeat = (value) => {
     const onlyNumbers = value.replace(/[^0-9]/g, "");
@@ -338,19 +408,12 @@ function CreateTaskScreen({ navigation, route }) {
     const cleanTitle = title.trim();
     const cleanReminder = reminder.trim();
 
-    if (!cleanTitle || !cleanReminder) {
-      Alert.alert("Faltan datos", "La tarea necesita titulo, recordatorio, fecha y horario.");
-      return;
-    }
-
     const nextReminderAt = buildReminderDateTime(selectedDate, selectedTime);
-    if (nextReminderAt <= Date.now()) {
-      Alert.alert("Fecha u horario invalido", "Elegir una fecha y hora futura.");
+    const validation = validateTaskForm(cleanTitle, cleanReminder, nextReminderAt);
+    if (!validation.valid) {
+      Alert.alert("Datos invalidos", validation.message);
       return;
     }
-
-    const stored = await AsyncStorage.getItem(getTasksKey(username));
-    const tasks = stored ? JSON.parse(stored) : [];
     const nextTask = {
       id: Date.now().toString(),
       title: cleanTitle,
@@ -359,11 +422,15 @@ function CreateTaskScreen({ navigation, route }) {
       reminderTime: formatTimeValue(selectedTime),
       repeatSeconds,
       nextReminderAt,
+      imageUri,
+      location,
+      contact,
       done: false,
       createdAt: new Date().toISOString()
     };
 
-    await AsyncStorage.setItem(getTasksKey(username), JSON.stringify([nextTask, ...tasks]));
+    const calendarEventId = await createCalendarEvent(nextTask);
+    await addTask({ ...nextTask, calendarEventId });
     Alert.alert("Tarea creada", `Primer aviso: ${formatNextReminder(nextReminderAt)}.`);
     navigation.goBack();
   };
@@ -469,7 +536,18 @@ function CreateTaskScreen({ navigation, route }) {
           />
           <Text style={styles.selectedRepeat}>Seleccionado: {getRepeatLabel(repeatSeconds)}</Text>
 
-          <Button title="Guardar tarea" onPress={createTask} />
+          <Text style={styles.label}>Recursos del dispositivo</Text>
+          <View style={styles.resourceGrid}>
+            <Button title="Tomar foto" onPress={takePhoto} />
+            <Button title="Elegir galeria" onPress={pickImage} />
+            <Button title="Usar GPS" onPress={attachLocation} />
+            <Button title="Contacto" onPress={attachContact} />
+          </View>
+          {imageUri ? <Image source={{ uri: imageUri }} style={styles.previewImage} /> : null}
+          {location ? <Text style={styles.reminderMeta}>Ubicacion asociada: {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</Text> : null}
+          {contact ? <Text style={styles.reminderMeta}>Responsable: {contact.name}</Text> : null}
+
+          <Button title="Guardar tarea y crear evento" onPress={createTask} />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -479,10 +557,6 @@ function CreateTaskScreen({ navigation, route }) {
 async function getStoredUsers() {
   const stored = await AsyncStorage.getItem(USERS_KEY);
   return stored ? JSON.parse(stored) : [];
-}
-
-function getTasksKey(username) {
-  return `${TASKS_KEY_PREFIX}_${username}`;
 }
 
 function getDefaultReminderTime() {
@@ -567,35 +641,6 @@ function formatReminderDateLabel(value) {
   }
 
   return value;
-}
-
-function getTaskRepeatSeconds(task) {
-  if (task.repeatSeconds !== undefined && task.repeatSeconds !== null) {
-    return task.repeatSeconds;
-  }
-
-  if (task.repeatMinutes !== undefined && task.repeatMinutes !== null) {
-    return task.repeatMinutes * 60;
-  }
-
-  return null;
-}
-
-function getRepeatLabel(seconds) {
-  if (seconds === undefined || seconds === null) {
-    return "Sin repeticion";
-  }
-
-  const option = REPEAT_OPTIONS.find((item) => item.seconds === seconds);
-  if (option) {
-    return option.label;
-  }
-
-  if (seconds < 60) {
-    return `Cada ${seconds} seg`;
-  }
-
-  return `Cada ${Math.round(seconds / 60)} min`;
 }
 
 function padTime(value) {
@@ -920,5 +965,21 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginBottom: 18,
     marginTop: -6
+  },
+  resourceGrid: {
+    gap: 10,
+    marginBottom: 14
+  },
+  previewImage: {
+    borderRadius: 8,
+    height: 160,
+    marginBottom: 12,
+    width: "100%"
+  },
+  taskImage: {
+    borderRadius: 8,
+    height: 90,
+    marginTop: 8,
+    width: "100%"
   }
 });
